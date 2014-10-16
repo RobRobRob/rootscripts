@@ -1,5 +1,4 @@
 #include <iostream>
-#include <sstream>
 #include <stdio.h>
 #include <vector>
 #include <string>
@@ -7,11 +6,7 @@
 
 #include <TCanvas.h>
 #include <TFile.h>
-#include <TGaxis.h>
 #include <TH1D.h>
-#include <TH2D.h>
-#include <TPad.h>
-#include <TStyle.h>
 #include <TTree.h>
 
 
@@ -24,7 +19,7 @@ void select_quad(std::string inputname_grid) {
     TTree *input_tree = dynamic_cast<TTree*>( input_grid->Get("cal"));
       
     TH1D *hist_pos = new TH1D ("Rel. z-Position", "Rel.  z-Position", 500, -1.0, 2.0);
-    TH1D *hist_edep_onlygood = new TH1D ("edep_hist_onlygood", "edep_hist_onlygood",1000 , 0, 400);
+    TH1D *hist_edep_onlygood = new TH1D ("edep_hist_onlygood", "edep_hist_onlygood",1000 , 0, 1000);
 
       
     if(input_tree!=NULL){
@@ -34,8 +29,8 @@ void select_quad(std::string inputname_grid) {
         std::vector<float> *cal_edep = NULL;
         std::vector<float> *cal_cpg_bl_pre_ca_level = NULL;
         std::vector<float> *cal_cpg_bl_post_ca_level = NULL;
-        std::vector<float> *cal_cpg_bl_pre_nca_level = NULL;
-        std::vector<float> *cal_cpg_bl_post_nca_level = NULL;
+        std::vector<float> *cal_cpg_bl_pre_ca_rms = NULL;
+        std::vector<float> *cal_cpg_bl_post_ca_rms = NULL;
         std::vector<int> *cal_cpg_diff_ert = NULL;
         std::vector<float> *cal_cpg_diff_rdip = NULL;
         std::vector<int> *cal_det = NULL;
@@ -52,6 +47,8 @@ void select_quad(std::string inputname_grid) {
         input_tree -> SetBranchStatus("cal_det", true);
         input_tree -> SetBranchStatus("cal_cpg_bl_pre_ca_level", true);
         input_tree -> SetBranchStatus("cal_cpg_bl_post_ca_level", true);
+        input_tree -> SetBranchStatus("cal_cpg_bl_pre_ca_rms", true);
+        input_tree -> SetBranchStatus("cal_cpg_bl_post_ca_rms", true);
         input_tree -> SetBranchStatus("cal_cpg_diff_ert", true);
         input_tree -> SetBranchStatus("cal_cpg_diff_rdip", true);
 
@@ -63,6 +60,8 @@ void select_quad(std::string inputname_grid) {
         input_tree -> SetBranchAddress("cal_det", &cal_det);
         input_tree -> SetBranchAddress("cal_cpg_bl_pre_ca_level", &cal_cpg_bl_pre_ca_level);
         input_tree -> SetBranchAddress("cal_cpg_bl_post_ca_level", &cal_cpg_bl_post_ca_level);
+        input_tree -> SetBranchAddress("cal_cpg_bl_pre_ca_rms", &cal_cpg_bl_pre_ca_rms);
+        input_tree -> SetBranchAddress("cal_cpg_bl_post_ca_rms", &cal_cpg_bl_post_ca_rms);
         input_tree -> SetBranchAddress("cal_cpg_diff_ert", &cal_cpg_diff_ert);
         input_tree -> SetBranchAddress("cal_cpg_diff_rdip", &cal_cpg_diff_rdip);       
        
@@ -75,38 +74,36 @@ void select_quad(std::string inputname_grid) {
         
         TTree *output_tree = new TTree ("new_cal", "new_cal");
         
-        double new_pos = 0;
-        double nca = 0;
-        double ca = 0;
-        double nca_ = 0;
-        double ca_good = 0;
-        double cathode = 0;
-        double rdip = 0;
+        float new_pos = 0;
+        float nca = 0;
+        float ca = 0;
+        float cathode = 0;
+        float rdip = 0;
         int ert = 0;
-        std::vector<double> energies(4);
-        double energy_onlygood = 0;
-        double diff_sig = 0;
-        double bl_diff = 0;
+        std::vector<float> energies(4);
+        float energy_onlygood = 0;
+        float diff_sig = 0;
+        float bl_diff = 0;
+        float bl_tresh = 0;
         bool whole_bad = 0;
         bool is_ca = 0;
-        bool is_noise = 0;
-        double threshold = 0;
+        float threshold = 0;
         
         // // calculated by hand 
-        // std::vector<double> df;
+        // std::vector<float> df;
         // df.push_back(0.765);
         // df.push_back(0.799);
         // df.push_back(0.657);
         // df.push_back(0.775);
         // calculated by hand 
-        std::vector<double> df;
+        std::vector<float> df;
         df.push_back(0.882);
         df.push_back(0.860);
         df.push_back(0.757);
         df.push_back(0.828);
 
         // from gain_correction
-        std::vector<double> gain;
+        std::vector<float> gain;
         gain.push_back(1.000);
         gain.push_back(0.983);  
         gain.push_back(0.962);
@@ -116,7 +113,7 @@ void select_quad(std::string inputname_grid) {
         gain.push_back(0.910);
         gain.push_back(0.890);
 
-        std::vector<double> p1;
+        std::vector<float> p1;
         p1.push_back(2.654);
         p1.push_back(2.572);
         p1.push_back(2.696);
@@ -130,7 +127,7 @@ void select_quad(std::string inputname_grid) {
         output_tree -> Branch("rdip", &rdip);
         output_tree -> Branch("ert", &ert);
 
-        int entry_length = input_tree->GetEntries();
+        int entry_length = int(input_tree->GetEntries());
 
         for(int i_entry=0; i_entry < entry_length; ++i_entry){
             if (i_entry % (entry_length / 10) == 0){
@@ -138,11 +135,12 @@ void select_quad(std::string inputname_grid) {
                 std::cout << i_entry << " of " << entry_length << std::endl;
             }
     		whole_bad = true;
+
     		input_tree->GetEntry(i_entry); 
     		
             // Is whole event bad?
-            for(int i = 0; i < (cal_det -> size()); i++){
-                if (flag_bad_pulse -> at(i) == 0){
+            for(int i_ca = 0; i_ca < int(cal_cpg_ph_ca -> size()); i_ca++){
+                if (flag_bad_pulse -> at(i_ca) == 0){
                      whole_bad = false;
                 }  
             }
@@ -157,7 +155,7 @@ void select_quad(std::string inputname_grid) {
                 diff_sig = 0;
                 is_ca = false;
                 // Calculate zpos
-                for (int i_ca = 0; i_ca < cal_cpg_ph_ca -> size(); i_ca++){
+                for (int i_ca = 0; i_ca < int(cal_cpg_ph_ca -> size()); i_ca++){
                     // Conditions
                     threshold = cal_cpg_ph_ca->at(i_ca) - df[i_ca] * cal_cpg_ph_nca->at(i_ca);
                     threshold *= (p1[0] / p1[i_ca]);
@@ -165,48 +163,52 @@ void select_quad(std::string inputname_grid) {
                         is_ca = true;
                     }
                     // Get cathode signal always from all dets, but look for ca/nca assingment
-                    if(is_ca){
+                    if(is_ca && flag_bad_pulse -> at(i_ca) == 0){
                         // Trigger -> CA as CA
-                        ca += cal_cpg_ph_ca->at(i_ca) * gain[2 * i_ca + 1] * (p1[0] / p1[i_ca]);
+                        ca += cal_cpg_ph_ca->at(i_ca) * (p1[0] / p1[i_ca]);
                     }
                     else{
                         // No Trigger -> CA as NCA
-                        nca += df[i_ca] * cal_cpg_ph_ca->at(i_ca) * gain[2 * i_ca + 1] * (p1[0] / p1[i_ca]);
+                        nca += df[i_ca] * cal_cpg_ph_ca->at(i_ca) *  (p1[0] / p1[i_ca]);
                     }   
                     // True NCA 
-                    nca += df[i_ca] * cal_cpg_ph_nca->at(i_ca) * gain[2 * i_ca] * (p1[0] / p1[i_ca]);
-                    cathode += cal_cpg_ph_ca->at(i_ca) * gain[2 * i_ca + 1] + cal_cpg_ph_nca->at(i_ca) * gain[2 * i_ca];
+                    nca += df[i_ca] * cal_cpg_ph_nca->at(i_ca) * (p1[0] / p1[i_ca]);
+                    cathode += cal_cpg_ph_ca->at(i_ca) + cal_cpg_ph_nca->at(i_ca);
                     cathode *= (p1[0] / p1[i_ca]);
                 }
                 diff_sig = ca - nca;
                 new_pos = cathode / diff_sig;
 
                 // Calculate Energy
-                for (int i_ca = 0; i_ca < cal_cpg_ph_ca->size(); i_ca++){
+                for (int i_ca = 0; i_ca < int(cal_cpg_ph_ca->size()); i_ca++){
                     energies[i_ca] = cal_edep -> at(i_ca);
                 }
                 // calculate new values
                 float e_max = *std::max_element(energies.begin(), energies.end());
-                for (int i_ca = 0; i_ca < cal_cpg_ph_ca->size(); ++i_ca){
+                for (int i_ca = 0; i_ca < int(cal_cpg_ph_ca->size()); ++i_ca){
                     bl_diff = cal_cpg_bl_post_ca_level -> at(i_ca) - cal_cpg_bl_pre_ca_level -> at(i_ca);
-                    if (energies[i_ca] > e_max / 100 && flag_bad_pulse -> at(i_ca) == 0 && bl_diff > 5.0){
+                    bl_tresh = (cal_cpg_bl_pre_ca_rms -> at(i_ca) + cal_cpg_bl_pre_ca_rms -> at(i_ca)) / 2; 
+                    if (flag_bad_pulse -> at(i_ca) == 0 && bl_diff > bl_tresh){
                         energy_onlygood += energies[i_ca];
                     }
                     if (energies[i_ca] == e_max){
                         rdip = cal_cpg_diff_rdip -> at(i_ca);
                         ert = cal_cpg_diff_ert -> at(i_ca);
                     }
+                }
+                if (energy_onlygood >= 0.0){
+                    hist_edep_onlygood -> Fill(energy_onlygood);        
+                    hist_pos -> Fill(new_pos);
+                    output_tree -> Fill(); 
                 }           
-                hist_edep_onlygood -> Fill(energy_onlygood);        
-                hist_pos -> Fill(new_pos);
-                output_tree -> Fill();  
+
             }	
         }
         hist_pos -> SetXTitle("rel. z-Position");
         hist_pos -> SetYTitle("Counts");
         hist_pos -> Write();
 
-        hist_edep_onlygood -> SetXTitle("Energy [keV]");
+        hist_edep_onlygood -> SetXTitle("Energy [Channels]");
         hist_edep_onlygood -> SetYTitle("Counts");
         hist_edep_onlygood -> Write();
         output_tree -> Write();
